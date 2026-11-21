@@ -1,0 +1,145 @@
+name: TWRP munch-devs hdzungx Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      MANIFEST_BRANCH:
+        description: 'TWRP Manifest Branch'
+        required: true
+        default: 'twrp-12.1'
+        type: choice
+        options:
+          - twrp-12.1
+          - twrp-11
+          - twrp-14
+          - twrp-14.1
+      DEVICE_TREE:
+        description: 'TWRP Device Tree URL'
+        required: true
+        default: 'https://github.com/munch-devs/twrp_device_xiaomi_munch'
+      DEVICE_TREE_BRANCH:
+        description: 'TWRP Device Tree Branch'
+        required: true
+        default: 'twrp-12.1'
+      DEVICE_PATH:
+        description: 'Device Path'
+        required: true
+        default: 'device/xiaomi/munch'
+      DEVICE_NAME:
+        description: 'Device Codename'
+        required: true
+        default: 'munch'
+      BUILD_TARGET:
+        description: 'Build Target (munch sử dụng boot)'
+        required: true
+        default: 'boot'
+        type: choice
+        options:
+          - vendor_boot
+          - boot
+          - recovery
+      KERNEL_TREE_URL:
+        description: 'Kernel Source URL (bắt buộc vì BoardConfig build kernel từ source)'
+        required: true
+        default: 'https://github.com/AOSPA/android_kernel_xiaomi_sm8250'
+      KERNEL_TREE_BRANCH:
+        description: 'Kernel Branch'
+        required: true
+        default: 'uvite'
+      KERNEL_PATH:
+        description: 'Kernel Path'
+        required: true
+        default: 'kernel/xiaomi/munch'
+
+jobs:
+  build:
+    name: Build TWRP by ${{ github.actor }}
+    runs-on: ubuntu-22.04
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clean-up Disk Space
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 24
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt update && sudo apt install -y aria2 curl gcc-aarch64-linux-gnu device-tree-compiler
+          sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          git clone https://github.com/akhilnarang/scripts.git -b master /tmp/scripts
+          sudo bash /tmp/scripts/setup/android_build_env.sh
+          rm -rf /tmp/scripts
+
+      - name: Sync TWRP Manifest
+        run: |
+          mkdir -p ${GITHUB_WORKSPACE}/twrp
+          cd ${GITHUB_WORKSPACE}/twrp
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          git config --global color.ui false
+          repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b ${{ inputs.MANIFEST_BRANCH }}
+          repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+
+      - name: Clone Device Tree
+        run: |
+          cd ${GITHUB_WORKSPACE}/twrp
+          rm -rf ./${{ inputs.DEVICE_PATH }}
+          git clone ${{ inputs.DEVICE_TREE }} -b ${{ inputs.DEVICE_TREE_BRANCH }} ./${{ inputs.DEVICE_PATH }}
+          cd ./${{ inputs.DEVICE_PATH }}
+          echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Clone Kernel and Clang
+        if: inputs.KERNEL_TREE_URL != ''
+        run: |
+          cd ${GITHUB_WORKSPACE}/twrp
+          git clone https://github.com/kdrag0n/proton-clang --depth=1 prebuilts/clang/host/linux-x86/clang-13.0.0
+          git clone ${{ inputs.KERNEL_TREE_URL }} --depth=1 -b ${{ inputs.KERNEL_TREE_BRANCH }} ${{ inputs.KERNEL_PATH }}
+          mkdir -p prebuilts/misc/linux-x86/dtc
+          [ -f prebuilts/misc/linux-x86/dtc/dtc ] || ln -sf $(which dtc) prebuilts/misc/linux-x86/dtc/dtc
+
+      - name: Build TWRP
+        run: |
+          cd ${GITHUB_WORKSPACE}/twrp
+          set +e
+          source build/envsetup.sh
+          export ALLOW_MISSING_DEPENDENCIES=true
+          lunch twrp_${{ inputs.DEVICE_NAME }}-eng
+          set -e
+          mka adbd ${{ inputs.BUILD_TARGET }}image
+
+      - name: Set Release Properties
+        run: |
+          echo "BUILD_DATE=$(TZ=Asia/Ho_Chi_Minh date +%Y%m%d)" >> $GITHUB_ENV
+          DEVICE_TREE_URL="${{ inputs.DEVICE_TREE }}"
+          if [[ "${DEVICE_TREE_URL}" == *.git ]]; then
+            DEVICE_TREE_URL="${DEVICE_TREE_URL%.git}"
+          fi
+          echo "DEVICE_TREE_URL=${DEVICE_TREE_URL}" >> $GITHUB_ENV
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: false
+          files: |
+            twrp/out/target/product/${{ inputs.DEVICE_NAME }}/vendor_boot.img
+            twrp/out/target/product/${{ inputs.DEVICE_NAME }}/boot.img
+            twrp/out/target/product/${{ inputs.DEVICE_NAME }}/recovery.img
+          name: TWRP for ${{ inputs.DEVICE_NAME }} (${{ env.BUILD_DATE }})
+          tag_name: twrp-${{ github.run_id }}
+          body: |
+            ## Unofficial TWRP Build
+            - **Manifest:** `minimal-manifest-twrp` (`${{ inputs.MANIFEST_BRANCH }}`)
+            - **Target:** `${{ inputs.BUILD_TARGET }}`
+            - **Device Tree:** [${{ inputs.DEVICE_TREE_BRANCH }}](${{ env.DEVICE_TREE_URL }}/tree/${{ inputs.DEVICE_TREE_BRANCH }})
+            - **Commit:** [${{ env.COMMIT_ID }}](${{ env.DEVICE_TREE_URL }}/commit/${{ env.COMMIT_ID }})

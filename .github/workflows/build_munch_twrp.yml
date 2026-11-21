@@ -24,6 +24,10 @@ jobs:
       image: ubuntu:20.04
       options: --privileged
 
+    defaults:
+      run:
+        shell: bash
+
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       VENDOR: xiaomi
@@ -85,7 +89,12 @@ jobs:
         git clone https://github.com/olzhas0986/android_bootable_recovery.git bootable/recovery
 
         # Build TWRP
-        . build/envsetup.sh && export ALLOW_MISSING_DEPENDENCIES=true && lunch twrp_${DEVICE}-eng && mka adbd bootimage -j$(nproc --all)
+        set +e
+        source build/envsetup.sh
+        export ALLOW_MISSING_DEPENDENCIES=true
+        lunch twrp_${DEVICE}-eng
+        set -e
+        mka adbd bootimage -j$(nproc --all)
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -112,3 +121,4 @@ jobs:
           - **Branch:** `twrp-12.1`
           - **Device Tree:** ${{ env.DEVICE_TREE }} (`${{ env.DEVICE_TREE_BRANCH }}`)
           - **Build Date:** ${{ env.BUILD_DATE }}
+          

@@ -2,6 +2,17 @@ name: TWRP munch Compiler
 
 on:
   workflow_dispatch:
+    inputs:
+      DEVICE_TREE:
+        description: 'Device Tree Repository URL'
+        required: true
+        default: 'https://github.com/olzhas0986/twrp_device_xiaomi_munch'
+        type: string
+      DEVICE_TREE_BRANCH:
+        description: 'Device Tree Branch'
+        required: true
+        default: 'new'
+        type: string
 
 jobs:
   build:
@@ -17,6 +28,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       VENDOR: xiaomi
       DEVICE: munch
+      DEVICE_TREE: ${{ inputs.DEVICE_TREE }}
+      DEVICE_TREE_BRANCH: ${{ inputs.DEVICE_TREE_BRANCH }}
 
     steps:
     - name: Checkout Repository
@@ -66,7 +79,7 @@ jobs:
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
         # Clone device repos
-        git clone https://github.com/olzhas0986/twrp_device_xiaomi_munch -b new device/${VENDOR}/${DEVICE}
+        git clone "$DEVICE_TREE" -b "$DEVICE_TREE_BRANCH" device/${VENDOR}/${DEVICE}
 
         rm -rf bootable/recovery
         git clone https://github.com/olzhas0986/android_bootable_recovery.git bootable/recovery
@@ -97,5 +110,5 @@ jobs:
           ## TWRP Build - Unofficial
           - **Device:** `${{ env.DEVICE }}` (`${{ env.VENDOR }}`)
           - **Branch:** `twrp-12.1`
-          - **Device Tree:** https://github.com/olzhas0986/twrp_device_xiaomi_munch (`new`)
+          - **Device Tree:** ${{ env.DEVICE_TREE }} (`${{ env.DEVICE_TREE_BRANCH }}`)
           - **Build Date:** ${{ env.BUILD_DATE }}

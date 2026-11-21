@@ -85,7 +85,7 @@ KERNEL_PATH := $(DEVICE_PATH)/prebuilt
 # whether to do an inline build of the kernel sources [broken for vendor_boot targets]
 ifeq ($(FOX_BUILD_FULL_KERNEL_SOURCES),1)
     TARGET_KERNEL_SOURCE := kernel/xiaomi/$(PRODUCT_RELEASE_NAME)
-    TARGET_KERNEL_CONFIG := vendor/$(PRODUCT_RELEASE_NAME)-fox_defconfig
+    TARGET_KERNEL_CONFIG := vendor/$(PRODUCT_RELEASE_NAME)_defconfig
     TARGET_KERNEL_CLANG_COMPILE := true
     KERNEL_SUPPORTS_LLVM_TOOLS := true
     TARGET_KERNEL_CROSS_COMPILE_PREFIX := aarch64-linux-gnu-
